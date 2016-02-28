@@ -1,51 +1,69 @@
+# import matplotlib.pyplot as plt
 import pandas as pd
-
-# Define a dataframe using pandas
-s1 = pd.DataFrame({
-                    'Names': ['Dan', 'Joe', 'Michael'],
-                    'Surnames': ['Tim' ,'Nil', 'Pep'],
-                    'IDs': [1,2,3],
-                  })
-
-# Select 2 columns
-# -> print( s1[['Names','Surnames']])
-
-# Selects the first 3 elements for the given columns
-# -> print( s1.loc[:2,['IDs', 'Surnames']])
-# Use numbers
-# -> print( s1.iloc[:3, 2])
-# Use numbers or names
-# print( s1.ix[2:3,['IDs', 4]])
-
-# Creates a new column
-# -> s1['value'] = s1['IDs']
-# -> print(s1)
-
-#==========ok####
-
-step1 = {   'field': 'Surnames',
-            'function': lambda Names, Surnames : Names + ' ' + Surnames
-        }
-step2 = {   'field': 'Surnames',
-            'function': lambda Surnames : 'Dr:' + Surnames
-        }
-
-train = [step1, step2]
+import networkx as nx
+from definition import Gr
 
 
 def apply_step(df, step):
-
-    args = dict((ar, df[ar]) for ar in step['function'].__code__.co_varnames)
-    df[step['field']] = step['function'](**args)
-    return(df)
-
-
-
-print(s1)
-for s in train:
-    s1 = apply_step(s1, s)
-    print(s1)
+    """
+    :param df: Pandas DataFrame
+    :param step: Dictionary with field and function
+    :return: One column DataFrame produced by a function applied to the input dataframe
+    """
+    df_local = df.copy()
+    args = dict((ar, df_local[ar]) for ar in step['function'].__code__.co_varnames)
+    return step['function'](**args)
 
 
-#==========ok####
+def apply_edge(df, edge):
+    """
+    :param df: Pandas Dataframe
+    :param edge: A list of steps. Each step is a dictionary containing a lambda function and a destination field name
+    :return: Pandas DataFrame with all steps applied.
+    """
+    output_df = pd.DataFrame()
+    for step in edge:
+        output_df[step['field']] = apply_step(df, step)
+    return output_df
 
+
+def leaves(graph):
+    """
+    :param graph: A graph that implements a in_degree function.
+    :return: A list of nodes that do not have input edges
+    """
+    return [n for n, d in graph.in_degree().items() if d == 0]
+
+
+def run_graph(graph):
+    """
+    :param graph:
+    :return:
+    """
+    results = []
+    if nx.is_forest(graph):
+        while len(leaves(graph)) > 0:
+            current_leaves = leaves(graph)
+            for n in current_leaves:
+                for edge in graph.edges_iter(n):
+                    local_data = graph.node[n]['data'].copy()
+                    if 'data' not in graph.node[edge[1]]:
+                        graph.node[edge[1]]['data'] = apply_edge(local_data, graph.edge[edge[0]][edge[1]]['transformation']).copy()
+                    else:
+                        graph.node[edge[1]]['data'] = pd.merge( left=graph.node[edge[1]]['data'],
+                                                                right=apply_edge(local_data,
+                                                                graph.edge[edge[0]][edge[1]]['transformation']).copy(),
+                                                                how='left',
+                                                                left_on=graph.node[edge[1]]['match_keys'],
+                                                                right_on=graph.node[edge[1]]['match_keys']
+                                                                )
+
+                if 'producer' in graph.node[n]:
+                    if graph.node[n]['producer']:
+                        results.append(graph.node[n]['data'])
+
+                graph.remove_node(n)
+    return results
+
+# def main():
+print(run_graph(Gr))
